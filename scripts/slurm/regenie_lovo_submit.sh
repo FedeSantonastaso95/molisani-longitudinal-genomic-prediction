@@ -5,7 +5,7 @@
 #SBATCH --time=2:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=300G
+#SBATCH --mem=50G
 
 INPUT_FILE="/path/to/lovo_jobs.tsv"
 OUTPUT_DIR="/path/to/lovo_results"

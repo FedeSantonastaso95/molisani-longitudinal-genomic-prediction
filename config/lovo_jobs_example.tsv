@@ -1,0 +1,4 @@
+Gene	Mask	Threshold	trait	phenoFile	covarFile	covarColList	phenoColList	pred	path_validated_input	path_regenie_step1_preds
+ENSG00000084674	LoF_HC	0.01	TotChol	/path/to/pheno_TotChol_residuals.tsv	/path/to/covar_PRS_TotChol.tsv	PRS_TotChol	TotChol	/path/to/step1_pred.list	/path/to/validated_input	/path/to/step1_predictions
+ENSG00000155657	missense	0.01	LDL	/path/to/pheno_LDL_residuals.tsv	/path/to/covar_PRS_LDL.tsv	PRS_LDL	LDL	/path/to/step1_pred.list	/path/to/validated_input	/path/to/step1_predictions
+ENSG00000139618	LoF_HC	0.001	HDL	/path/to/pheno_HDL_residuals.tsv	/path/to/covar_PRS_HDL.tsv	PRS_HDL	HDL	/path/to/step1_pred.list	/path/to/validated_input	/path/to/step1_predictions
