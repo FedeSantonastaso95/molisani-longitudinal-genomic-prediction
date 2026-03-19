@@ -65,33 +65,6 @@ df <- fread(
   data.table = FALSE
 ) %>%
   mutate(
-    Dataexit_Bc_Fup2020  = as.character(Dataexit_Bc_Fup2020),
-    Dataexit_Pc_Fup2020  = as.character(Dataexit_Pc_Fup2020),
-    Dataexit_Crc_Fup2020 = as.character(Dataexit_Crc_Fup2020),
-    Dataexit_Lc_Fup2020  = as.character(Dataexit_Lc_Fup2020),
-    Dataexit_Rnc_Fup2020 = as.character(Dataexit_Rnc_Fup2020),
-    Dataexit_Pnc_Fup2020 = as.character(Dataexit_Pnc_Fup2020)
-  ) %>%
-  mutate(
-    Date_cancer_FUP2020 = case_when(
-      Dataexit_Bc_Fup2020  != "2020-12-31" ~ Dataexit_Bc_Fup2020,
-      Dataexit_Pc_Fup2020  != "2020-12-31" ~ Dataexit_Pc_Fup2020,
-      Dataexit_Crc_Fup2020 != "2020-12-31" ~ Dataexit_Crc_Fup2020,
-      Dataexit_Lc_Fup2020  != "2020-12-31" ~ Dataexit_Lc_Fup2020,
-      Dataexit_Rnc_Fup2020 != "2020-12-31" ~ Dataexit_Rnc_Fup2020,
-      Dataexit_Pnc_Fup2020 != "2020-12-31" ~ Dataexit_Pnc_Fup2020,
-      TRUE ~ "2020-12-31"
-    ),
-    Fnf_cancer_FUP2020 = ifelse(
-      Fnf_Bc_Fup2020 == 1 | Fnf_Pc_Fup2020 == 1 | Fnf_Crc_Fup2020 == 1 |
-        Fnf_Lc_Fup2020 == 1 | Fnf_Rnc_Fup2020 == 1 | Fnf_Pnc_Fup2020 == 1,
-      1, 0
-    )
-  ) %>%
-  mutate(
-    Fnf_cancer_FUP2020 = ifelse(is.na(Fnf_cancer_FUP2020), 0, Fnf_cancer_FUP2020)
-  ) %>%
-  mutate(
     # Baseline CHD coding:
     #   0 = No
     #   1 = Yes, documented
