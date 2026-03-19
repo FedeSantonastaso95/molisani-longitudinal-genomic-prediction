@@ -2,25 +2,27 @@
 # 06b_rare_variant_info_mac_filtering.R
 #
 # Description:
-# This script annotates candidate rare variants with imputation quality (INFO)
-# and allele frequency (A1FREQ) using association summary statistic files
-# generated with REGENIE from sequence-imputed genotype data.
+# This script annotates candidate rare variants with imputation quality (INFO),
+# allele frequency (A1FREQ), and sample size (N) using REGENIE summary
+# statistics generated from sequence-imputed genotype data.
+#
+# The script is intended to run downstream of the rare variant selection
+# workflow based on burden-test and LOVO results.
 #
 # The input legend file contains, for each trait, the path to the corresponding
-# REGENIE summary statistics file (one file per trait).
-#
-# REGENIE summary statistics files are expected to include at least the
-# following columns:
+# REGENIE summary statistics file (one file per trait). These REGENIE files are
+# expected to include at least the following columns:
 #   - CHROM      : chromosome
 #   - GENPOS     : genomic position (GRCh38)
 #   - ALLELE0    : reference allele
 #   - ALLELE1    : alternate allele
 #   - A1FREQ     : allele frequency of ALLELE1
 #   - INFO       : imputation quality score
+#   - N          : sample size used for the association test
 #
 # For each variant-trait combination, the script:
 #   1. matches the variant to the corresponding REGENIE summary statistics file
-#   2. extracts INFO and A1FREQ
+#   2. extracts INFO, A1FREQ, and N
 #   3. computes minor allele frequency (MAF) as:
 #         MAF = min(A1FREQ, 1 - A1FREQ)
 #   4. computes minor allele count (MAC) as:
@@ -30,17 +32,18 @@
 #         MAC  >= 5
 #
 # Notes:
-# - INFO and A1FREQ are derived from REGENIE association analyses performed on
-#   the same imputed genotype dataset used for rare variant analyses.
+# - INFO, A1FREQ, and N are derived from REGENIE association analyses performed
+#   on the same sequence-imputed genotype dataset used for rare variant analyses.
 # - MAF is obtained by folding A1FREQ to the minor allele frequency scale.
-# - Paths shown below are placeholders for reproducibility.
+# - Paths shown below are placeholders for reproducibility. Original analyses
+#   were run on protected institutional infrastructure.
 #
 # Inputs:
 #   - Candidate rare variant table
 #   - Legend file mapping traits to REGENIE summary statistics paths
 #
 # Outputs:
-#   - Annotated table with INFO, A1FREQ, MAF, and MAC
+#   - Annotated table with INFO, A1FREQ, N, MAF, and MAC
 #   - Filtered table retaining variants with INFO >= 0.8 and MAC >= 5
 #
 # Usage:
@@ -61,10 +64,6 @@ candidate_file        <- "/path/to/rare_variants_candidates.tsv"
 legend_file           <- "/path/to/regenie_sumstats_legend_MAC1.tsv"
 annotated_output_file <- "/path/to/rare_variants_with_info_maf_mac.tsv"
 filtered_output_file  <- "/path/to/rare_variants_filtered_info08_mac5.tsv"
-
-# If N is not already present in the candidate table, define a fixed sample size
-# here. Otherwise, the script will use the N column from the candidate table.
-study_n <- NA_real_
 
 # =========================
 # Load inputs
@@ -114,6 +113,7 @@ if (length(traits_use) == 0) {
 # =========================
 dc[, INFO := as.numeric(NA)]
 dc[, A1FREQ := as.numeric(NA)]
+dc[, N_sumstats := as.numeric(NA)]
 
 # =========================
 # Helper function to create variant key
@@ -125,7 +125,7 @@ make_key <- function(chr, pos, a0, a1) {
 }
 
 # =========================
-# Annotate INFO and A1FREQ by trait
+# Annotate INFO, A1FREQ, and N by trait
 # =========================
 for (tr in legend_use$trait) {
   
@@ -138,7 +138,7 @@ for (tr in legend_use$trait) {
   
   ss <- fread(f)
   
-  required_ss_cols <- c("CHROM", "GENPOS", "ALLELE0", "ALLELE1", "INFO", "A1FREQ")
+  required_ss_cols <- c("CHROM", "GENPOS", "ALLELE0", "ALLELE1", "INFO", "A1FREQ", "N")
   missing_ss_cols <- setdiff(required_ss_cols, names(ss))
   
   if (length(missing_ss_cols) > 0) {
@@ -152,7 +152,7 @@ for (tr in legend_use$trait) {
   
   # Build matching key in REGENIE summary statistics
   ss[, key := make_key(CHROM, GENPOS, ALLELE0, ALLELE1)]
-  ss <- ss[, .(key, INFO, A1FREQ)]
+  ss <- ss[, .(key, INFO, A1FREQ, N)]
   setkey(ss, key)
   
   # Subset candidate rows for current trait
@@ -161,9 +161,10 @@ for (tr in legend_use$trait) {
   # Match candidate variants to REGENIE summary statistics
   m <- ss[.(dc$variant[idx]), on = "key", nomatch = NA]
   
-  # Fill INFO and A1FREQ in the candidate table
-  dc$INFO[idx]   <- m$INFO
-  dc$A1FREQ[idx] <- m$A1FREQ
+  # Fill annotations in the candidate table
+  dc$INFO[idx]      <- m$INFO
+  dc$A1FREQ[idx]    <- m$A1FREQ
+  dc$N_sumstats[idx] <- m$N
 }
 
 # =========================
@@ -176,14 +177,8 @@ dc[, MAF := fifelse(
   pmin(A1FREQ, 1 - A1FREQ)
 )]
 
-# Use N from candidate table if available; otherwise use study_n
-if ("N" %in% names(dc)) {
-  dc[, N_for_MAC := as.numeric(N)]
-} else {
-  dc[, N_for_MAC := study_n]
-}
-
-dc[, MAC := 2 * N_for_MAC * MAF]
+# MAC is derived from MAF and N extracted from REGENIE summary statistics.
+dc[, MAC := 2 * as.numeric(N_sumstats) * MAF]
 
 # =========================
 # Save annotated table
@@ -202,7 +197,7 @@ fwrite(
 # Apply INFO and MAC filters
 # =========================
 filtered_dc <- dc %>%
-  filter(!is.na(INFO), !is.na(MAF), !is.na(MAC)) %>%
+  filter(!is.na(INFO), !is.na(MAF), !is.na(N_sumstats), !is.na(MAC)) %>%
   filter(INFO >= 0.8, MAC >= 5)
 
 # =========================
