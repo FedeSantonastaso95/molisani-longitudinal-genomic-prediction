@@ -23,7 +23,7 @@
 #   at baseline.
 # - Models are adjusted for:
 #     * Age
-#     * PC1-PC5, when available
+#     * PC1-PC5
 #     * Sex, only when appropriate
 ############################################################
 

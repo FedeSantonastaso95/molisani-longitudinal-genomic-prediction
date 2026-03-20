@@ -2,6 +2,10 @@
 # Supplementary Table S12
 # Cox models for PRS_CHD, SCORE2, and family history
 #
+# Updated version:
+#   - Cox models adjusted for Age, Sex, and PC1:PC5
+#   - extract only target predictors for the final table
+#
 # Description:
 # This script fits Cox proportional-hazards models to evaluate the
 # independent and joint associations of:
@@ -10,12 +14,11 @@
 #   - family history of CHD
 # with incident coronary heart disease (CHD).
 #
-#
 # Models fitted:
-#   - Model 0: PRS_CHD only
-#   - Model 1: PRS_CHD + SCORE2
-#   - Model 2: PRS_CHD + family history
-#   - Model 3: PRS_CHD + SCORE2 + family history
+#   - Model 0: PRS_CHD + covariates
+#   - Model 1: PRS_CHD + SCORE2 + covariates
+#   - Model 2: PRS_CHD + family history + covariates
+#   - Model 3: PRS_CHD + SCORE2 + family history + covariates
 #
 # Analysis restrictions:
 #   - QC-passed participants only
@@ -29,6 +32,11 @@
 #   - PRS_CHD is standardized to 1 SD
 #   - SCORE2 is standardized to 1 SD
 #
+# Covariate adjustment:
+#   - Age
+#   - Sex
+#   - PC1, PC2, PC3, PC4, PC5
+#
 # Input:
 #   - main longitudinal dataset
 #   - SCORE2 file computed previously
@@ -40,73 +48,106 @@
 
 
 ## ----------------------------
-## Libraries
+## 0. Clean workspace
+## ----------------------------
+rm(list = ls())
+
+
+## ----------------------------
+## 1. Libraries
 ## ----------------------------
 library(data.table)
 library(dplyr)
+library(tidyr)
 library(survival)
 library(tibble)
 
 
 ## ----------------------------
-## Input / output paths
+## 2. Input / output paths
 ## ----------------------------
 main_file   <- "path/to/main_longitudinal_dataset.txt"
 score2_file <- "path/to/output/2026.02.18_SCORE2_computed.txt"
 aux_file    <- "path/to/auxiliary_phenotype_dataset.txt"
 
-output_file <- "path/to/output/2026.02.23_Supplementary_Table_S12_CHD_PRS_SCORE2_FH.txt"
+output_file <- "path/to/output/2026.03.20_Supplementary_Table_S12_CHD_PRS_SCORE2_FH_adjusted.txt"
 
 
 ## ----------------------------
-## Helper: format p-values
+## 3. Helper: format p-values
 ## ----------------------------
 format_pvalue <- function(p) {
   if (is.na(p)) return(NA_character_)
-  if (p < 0.001) {
-    out <- formatC(p, format = "e", digits = 2)
-    out <- gsub("e", "×10^", out, fixed = TRUE)
-    return(out)
-  }
-  formatC(p, format = "f", digits = 3)
+  out <- formatC(p, digits = 2, format = "e")
+  out <- gsub("e\\+?(-?\\d+)", "×10^\\1", out)
+  out
 }
 
 
 ## ----------------------------
-## Helper: extract model results
+## 4. Helper: extract target predictors
 ## ----------------------------
-extract_cox_terms <- function(fit, model_label, predictor_labels) {
-  sm <- summary(fit)
+extract_target_terms <- function(model, model_name, n_total, n_events) {
   
-  coef_tab <- as.data.frame(sm$coefficients) %>%
-    tibble::rownames_to_column("term")
+  coef_df <- as.data.frame(summary(model)$coefficients) %>%
+    tibble::rownames_to_column(var = "variable")
   
-  ci_tab <- as.data.frame(sm$conf.int) %>%
-    tibble::rownames_to_column("term")
+  conf_df <- as.data.frame(summary(model)$conf.int) %>%
+    tibble::rownames_to_column(var = "variable")
   
-  out <- coef_tab %>%
-    left_join(ci_tab, by = "term") %>%
-    filter(term %in% names(predictor_labels)) %>%
-    transmute(
-      Model = model_label,
-      Predictor = unname(predictor_labels[term]),
-      HR = `exp(coef)`,
-      CI_low = `lower .95`,
-      CI_high = `upper .95`,
+  out <- coef_df %>%
+    select(variable, coef, `Pr(>|z|)`) %>%
+    rename(
+      beta = coef,
       p_value_num = `Pr(>|z|)`
     ) %>%
-    mutate(
-      `HR (95% CI)` = sprintf("%.2f (%.2f-%.2f)", HR, CI_low, CI_high),
-      `P-value` = vapply(p_value_num, format_pvalue, character(1))
+    left_join(
+      conf_df %>%
+        select(var, `exp(coef)`, `lower .95`, `upper .95`) %>%
+        rename(
+          HR = `exp(coef)`,
+          CI_low = `lower .95`,
+          CI_high = `upper .95`
+        ),
+      by = c("variable" = "var")
     ) %>%
-    select(Model, Predictor, `HR (95% CI)`, `P-value`, HR, CI_low, CI_high, p_value_num)
+    filter(variable %in% c(
+      "PRS_CHD",
+      "SCORE2",
+      "factor(Fam_Chd)1"
+    )) %>%
+    mutate(
+      Predictor = case_when(
+        variable == "PRS_CHD" ~ "PRS_CHD",
+        variable == "SCORE2" ~ "SCORE2",
+        variable == "factor(Fam_Chd)1" ~ "Family history",
+        TRUE ~ variable
+      ),
+      `HR (95% CI)` = sprintf("%.2f (%.2f-%.2f)", HR, CI_low, CI_high),
+      `P-value` = vapply(p_value_num, format_pvalue, character(1)),
+      Model = model_name,
+      N_total = n_total,
+      N_events = n_events
+    ) %>%
+    select(
+      Model,
+      Predictor,
+      `HR (95% CI)`,
+      `P-value`,
+      N_total,
+      N_events,
+      HR,
+      CI_low,
+      CI_high,
+      p_value_num
+    )
   
   out
 }
 
 
 ## ----------------------------
-## 1. Load main dataset
+## 5. Load main dataset
 ## ----------------------------
 df_main <- fread(
   main_file,
@@ -139,7 +180,7 @@ df_main <- fread(
 
 
 ## ----------------------------
-## 2. Load SCORE2
+## 6. Load SCORE2
 ## ----------------------------
 score2_df <- fread(
   score2_file,
@@ -148,7 +189,7 @@ score2_df <- fread(
 
 
 ## ----------------------------
-## 3. Load auxiliary phenotype data
+## 7. Load auxiliary phenotype data
 ## ----------------------------
 aux_df <- fread(
   aux_file,
@@ -162,7 +203,7 @@ aux_df <- fread(
 
 
 ## ----------------------------
-## 4. Merge data sources
+## 8. Merge data sources
 ## ----------------------------
 df <- df_main %>%
   left_join(score2_df, by = c("FID", "Idth_Ms2022")) %>%
@@ -170,7 +211,7 @@ df <- df_main %>%
 
 
 ## ----------------------------
-## 5. Define analysis sample
+## 9. Define analysis sample
 ## ----------------------------
 df_analysis <- df %>%
   # Exclude prevalent CHD
@@ -178,7 +219,7 @@ df_analysis <- df %>%
   # Exclude prevalent stroke
   filter(!(Cerebro_Bs_New %in% c(1, 2))) %>%
   # Exclude diabetes
-  filter(T2d_Arw != 1) %>%
+  filter(T2d_Arw != 1 | is.na(T2d_Arw)) %>%
   # Keep SCORE2 age range
   filter(Age >= 40 & Age <= 69) %>%
   transmute(
@@ -192,7 +233,14 @@ df_analysis <- df %>%
       Fam_Chd == 1 ~ 1,
       Fam_Chd == 0 ~ 0,
       TRUE ~ NA_real_
-    )
+    ),
+    Age = as.numeric(Age),
+    Sex = as.factor(Sex),
+    PC1 = as.numeric(PC1),
+    PC2 = as.numeric(PC2),
+    PC3 = as.numeric(PC3),
+    PC4 = as.numeric(PC4),
+    PC5 = as.numeric(PC5)
   ) %>%
   filter(
     !is.na(time),
@@ -201,89 +249,76 @@ df_analysis <- df %>%
 
 
 ## ----------------------------
-## 6. Use common complete-case dataset
+## 10. Use common complete-case dataset
 ## ----------------------------
 #
 # Using the same complete-case dataset across all four models ensures
 # directly comparable estimates.
 df_cc <- df_analysis %>%
-  select(time, event, PRS_CHD, SCORE2, Fam_Chd) %>%
+  select(
+    time, event,
+    PRS_CHD, SCORE2, Fam_Chd,
+    Age, Sex, PC1, PC2, PC3, PC4, PC5
+  ) %>%
   tidyr::drop_na()
 
+n_total <- nrow(df_cc)
+n_events <- sum(df_cc$event == 1, na.rm = TRUE)
+
+cat("N included in models:", n_total, "\n")
+cat("N events:", n_events, "\n")
+
 
 ## ----------------------------
-## 7. Fit Cox models
+## 11. Fit Cox models
 ## ----------------------------
 fit_model_0 <- coxph(
-  Surv(time, event) ~ PRS_CHD,
+  Surv(time, event) ~ PRS_CHD + Age + Sex + PC1 + PC2 + PC3 + PC4 + PC5,
   data = df_cc
 )
 
 fit_model_1 <- coxph(
-  Surv(time, event) ~ PRS_CHD + SCORE2,
+  Surv(time, event) ~ PRS_CHD + SCORE2 + Age + Sex + PC1 + PC2 + PC3 + PC4 + PC5,
   data = df_cc
 )
 
 fit_model_2 <- coxph(
-  Surv(time, event) ~ PRS_CHD + Fam_Chd,
+  Surv(time, event) ~ PRS_CHD + factor(Fam_Chd) + Age + Sex + PC1 + PC2 + PC3 + PC4 + PC5,
   data = df_cc
 )
 
 fit_model_3 <- coxph(
-  Surv(time, event) ~ PRS_CHD + SCORE2 + Fam_Chd,
+  Surv(time, event) ~ PRS_CHD + SCORE2 + factor(Fam_Chd) + Age + Sex + PC1 + PC2 + PC3 + PC4 + PC5,
   data = df_cc
 )
 
 
 ## ----------------------------
-## 8. Extract model results
+## 12. Extract model results
 ## ----------------------------
-predictor_map <- c(
-  PRS_CHD = "PRS_CHD",
-  SCORE2 = "SCORE2",
-  Fam_Chd = "Family history"
+models <- list(
+  "Model 0: PRS_CHD + covariates" = fit_model_0,
+  "Model 1: PRS_CHD + SCORE2 + covariates" = fit_model_1,
+  "Model 2: PRS_CHD + family history + covariates" = fit_model_2,
+  "Model 3: PRS_CHD + SCORE2 + family history + covariates" = fit_model_3
 )
 
-tab_model_0 <- extract_cox_terms(
-  fit = fit_model_0,
-  model_label = "Model 0",
-  predictor_labels = predictor_map
-)
-
-tab_model_1 <- extract_cox_terms(
-  fit = fit_model_1,
-  model_label = "Model 1",
-  predictor_labels = predictor_map
-)
-
-tab_model_2 <- extract_cox_terms(
-  fit = fit_model_2,
-  model_label = "Model 2",
-  predictor_labels = predictor_map
-)
-
-tab_model_3 <- extract_cox_terms(
-  fit = fit_model_3,
-  model_label = "Model 3",
-  predictor_labels = predictor_map
-)
-
-
-## ----------------------------
-## 9. Combine final table
-## ----------------------------
 final_table <- bind_rows(
-  tab_model_0,
-  tab_model_1,
-  tab_model_2,
-  tab_model_3
+  lapply(names(models), function(model_name) {
+    extract_target_terms(
+      model = models[[model_name]],
+      model_name = model_name,
+      n_total = n_total,
+      n_events = n_events
+    )
+  })
 )
 
 print(final_table)
 
 
 ## ----------------------------
-## 10. Save output
+## 13. Save output
 ## ----------------------------
 fwrite(
   final_table,

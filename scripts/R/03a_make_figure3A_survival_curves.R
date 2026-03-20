@@ -25,7 +25,7 @@
 # - Models are adjusted for:
 #     * Age
 #     * Sex, when appropriate
-#     * PC1-PC5, when available
+#     * PC1-PC5
 ############################################################
 
 
