@@ -410,3 +410,244 @@ The script:
 - Family history is modelled as a binary predictor
 - All reported estimates come from covariate-adjusted Cox models
 - SCORE2 input is derived from `05a_compute_SCORE2_primary_prevention.R`
+
+## Rare variant analyses
+
+Rare variant gene-based association analyses were performed with **REGENIE** using a custom workflow maintained separately at:
+
+`https://github.com/HTGenomeAnalysisUnit/nf-pipeline-regenie`
+
+This repository does **not** reimplement the full burden-testing pipeline. Instead, it documents the study-specific downstream steps used in this project, including:
+
+- SLURM-based leave-one-variant-out (LOVO) analyses with REGENIE
+- post-processing of LOVO output files
+- annotation and filtering of selected rare variants
+- extraction of variant dosages from sequence-imputed genotypes
+- downstream association, survival, and interaction analyses for selected rare variants
+
+
+### `scripts/slurm/regenie_lovo_submit.sh`
+
+Submits **leave-one-variant-out (LOVO)** rare variant analyses with REGENIE step 2 on an HPC cluster using SLURM.
+
+The script:
+- reads a tab-delimited job table with one row per gene/mask/trait analysis
+- builds the corresponding `--mask-lovo` argument for each test
+- submits one SLURM job per row
+- runs REGENIE step 2 with the same burden-test configuration used in the primary analysis
+
+**Used for**
+- LOVO analyses of exome-wide significant gene-based associations
+
+**Notes**
+- Runs downstream of the primary REGENIE gene-based association workflow
+- Uses the REGENIE `--mask-lovo` option
+- Requires a job table specifying gene, mask, threshold, phenotype file, covariate file, prediction file, and input paths
+- Paths in the public version are placeholders and should be adapted locally
+
+
+### `config/lovo_jobs_example.tsv`
+
+Example tab-delimited input table used by `scripts/slurm/regenie_lovo_submit.sh`.
+
+Each row defines one LOVO analysis and includes:
+- gene identifier
+- variant mask
+- allele-frequency threshold
+- trait name
+- phenotype and covariate files
+- REGENIE step 1 predictions
+- input directories mounted inside the container
+
+**Used for**
+- Example configuration for LOVO job submission
+
+**Notes**
+- This file is provided as a template only
+- Real paths and protected institutional file locations are not distributed in the public repository
+
+
+### `06a_rare_variant_lovo_processing.R`
+
+Processes REGENIE LOVO output files and quantifies the contribution of individual variants to significant gene-based association signals.
+
+The script:
+- reads and merges LOVO REGENIE output files across genes, masks, and traits
+- extracts metadata from file names
+- retains the burden test corresponding to the top gene-level signal from the reference results table
+- computes a variance-explained proxy as `R2 = CHISQ / N`
+- defines the reference result as the full gene-based burden test including all rare variants in the mask
+- computes the relative contribution of each variant as:
+
+`delta_r2 = (R2_full - R2_reduced) / R2_full`
+
+- labels LOVO results according to technical validity
+- identifies variants considered contributory when `delta_r2 >= 0.10`
+
+**Used for**
+- Post-processing of LOVO analyses
+- Identification of candidate driver variants within significant gene-based signals
+
+**Notes**
+- LOVO results are first filtered for technical validity
+- The public version uses placeholder paths and anonymized file structure
+- The reference result corresponds to the full burden test without excluding any variant
+
+
+### `06b_rare_variant_info_mac_filtering.R`
+
+Annotates candidate rare variants with imputation quality and allele-frequency metrics derived from REGENIE summary statistics generated from the same sequence-imputed genotype dataset.
+
+The script:
+- matches selected variants to trait-specific REGENIE summary statistics files
+- extracts:
+  - `INFO`
+  - `A1FREQ`
+  - `N`
+- computes minor allele frequency as:
+
+`MAF = min(A1FREQ, 1 - A1FREQ)`
+
+- computes minor allele count as:
+
+`MAC = 2 * N * MAF`
+
+- exports an annotated table with INFO, A1FREQ, MAF, and MAC
+
+**Used for**
+- Variant-level annotation of selected rare variants
+- Documentation of upstream filtering criteria
+
+**Notes**
+- This script is intended to document how INFO and MAC were derived
+- In the study workflow, the rare variant table used downstream is assumed to already satisfy the predefined INFO and MAC criteria
+
+
+### `scripts/bash/extract_rare_variant_dosages.sh`
+
+Extracts genotype dosages for selected rare variants from sequence-imputed genotype data using PLINK2.
+
+The script:
+- reads an imputed genotype dataset in BGEN format
+- extracts a list of selected rare variants
+- exports allele dosages using `PLINK2 --export A`
+
+**Used for**
+- Extraction of genotype dosages for selected rare variants
+
+**Notes**
+- In this dataset, the exported dosage corresponds to the **major allele**
+- Rare-allele carrier status is therefore derived downstream by recoding the exported dosages
+- The public version uses placeholder paths and anonymized inputs
+
+
+### `06c_rare_variant_chd_association_analysis.R`
+
+Performs downstream association analyses for selected rare variants in relation to coronary heart disease (CHD).
+
+The script:
+- loads PLINK2 genotype dosage output for selected rare variants
+- recodes dosages from the major allele to rare-allele carrier dosage
+- links variants to their imputed-genotype identifiers
+- prepares the phenotype dataset
+- performs cross-sectional logistic regression analyses for CHD
+- performs survival analyses for incident CHD using Cox proportional hazards models
+- restricts survival analyses to variants showing nominal evidence of association in the cross-sectional analysis (`P < 0.05`)
+
+**Used for**
+- Cross-sectional and longitudinal CHD analyses for selected rare variants
+
+**Notes**
+- The input rare variant table is assumed to already contain the final set of variants retained after upstream filtering
+- Baseline-prevalent CHD cases are excluded from survival analyses
+- Models are adjusted for age, sex, and genetic principal components (PC1–PC5)
+
+
+### `06d_chd_prs_rare_variant_survival_figure_and_tables.R`
+
+Generates the final CHD cumulative hazard figure combining PRS stratification and rare variant carrier status, and produces the corresponding supplementary table.
+
+The script:
+- fits Cox models for:
+  - PRS only
+  - PRS plus carrier status for selected rare variants
+- defines PRS quintiles:
+  - on all participants in the PRS-only model
+  - only among non-carriers in variant-specific models
+- treats rare variant carriers as a separate group
+- generates the final multi-panel cumulative hazard figure
+- exports model-derived hazard ratio tables for the supplementary material
+
+**Used for**
+- Figure 5
+- Supplementary survival model table
+
+**Notes**
+- Variant-specific PRS strata are defined among non-carriers only
+- Carrier groups are shown separately
+- Models are adjusted for age, sex, and PC1–PC5
+
+
+### `06e_chd_prs_rare_variant_interaction_models.R`
+
+Performs supplementary analyses to evaluate the relationship between CHD polygenic risk score (PRS) and rare variant carrier status in incident coronary heart disease (CHD).
+
+The script:
+- loads genotype dosages for selected rare variants exported with PLINK2
+- recodes genotype dosages so that:
+  - `0` = non-carrier of the rare allele
+  - `1` = heterozygous carrier
+  - `2` = homozygous carrier of the rare allele
+- restricts the analysis to sequence-imputed samples
+- prepares the CHD survival dataset
+- standardizes the CHD PRS
+- defines carrier status for the three selected rare variants:
+  - `rs3798220` (`LPA`, Lp(a))
+  - `rs58757394` (`SLC4A11`, SBP)
+  - `rs730882080` (`LDLR`, LDL)
+
+For each rare variant, the script fits:
+- a linear model testing the association between PRS and rare variant carrier status
+- a logistic model testing the association between carrier status and PRS
+- Cox proportional hazards models for incident CHD including:
+  - rare variant carrier status only
+  - PRS only
+  - rare variant carrier status and PRS jointly
+  - rare variant carrier status × PRS interaction
+
+The script also:
+- compares additive and interaction Cox models using likelihood ratio tests
+- quantifies changes in effect estimates before and after mutual adjustment
+- exports formatted supplementary tables for:
+  - PRS ~ carrier analyses
+  - carrier ~ PRS analyses
+  - Cox model comparison before and after mutual adjustment
+  - PRS × rare variant interaction models
+
+**Used for**
+- Supplementary analyses of PRS and rare variant interplay in incident CHD
+- Supplementary interaction tables
+
+**Notes**
+- Genotype dosages were exported with `PLINK2 --export A`
+- In this dataset, exported dosages correspond to the major allele and are recoded downstream to define rare allele carrier status
+- Analysis is restricted to sequence-imputed samples with non-missing CHD follow-up, PRS, and covariates
+- Cox models are adjusted for age, sex, and genetic principal components (PC1–PC5)
+
+
+### `06f_carrier_vs_noncarrier_phenotypes.R`
+
+Generates a supplementary figure showing the distribution of quantitative phenotypes in carriers versus non-carriers of selected rare variants.
+
+The script:
+- loads recoded rare variant carrier data
+- merges carrier status with phenotype data
+- generates violin plots comparing phenotype distributions in carriers and non-carriers
+- reports descriptive statistics for each variant–phenotype pair
+
+**Used for**
+- Supplementary figure on phenotype distributions by rare variant carrier status
+
+**Notes**
+- Carrier status is defined from recoded dosages, where `1` or `2` indicates carriage of the rare allele
+- Phenotypes shown correspond to traits linked to the selected rare variants
