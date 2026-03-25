@@ -9,11 +9,12 @@
 #   non-carriers of the tested rare variant; carriers are treated as a
 #   separate group.
 #
-# Final 4-panel figure:
-# - A: PRS only
-# - B: LPA (rs3798220_C)
-# - C: LDLR (rs730882080_T)
-# - D: SLC4A11 (rs58757394_T)
+# Main Figure 5:
+# - A: LPA (rs3798220_C)
+# - B: LDLR (rs730882080_T)
+#
+# Supplementary figure:
+# - SLC4A11 (rs58757394_T)
 #
 # Final supplementary table:
 # - PRS only                -> reference = Q1
@@ -289,6 +290,7 @@ get_predicted_curves <- function(fit, newdata, legend_var = "legend_group") {
 
 # =========================================================
 # Build PRS-only prediction dataframe
+# Used for supplementary tables
 # =========================================================
 build_prs_only_sf <- function(df) {
   
@@ -566,7 +568,7 @@ make_panel_plot <- function(sf,
 }
 
 # =========================================================
-# Build prediction data for final 4-panel figure
+# Build prediction data
 # =========================================================
 sf_prs_only    <- build_prs_only_sf(df1)
 sf_rs3798220   <- build_prs_variant_sf(df1, rs3798220)
@@ -574,19 +576,12 @@ sf_rs730882080 <- build_prs_variant_sf(df1, rs730882080)
 sf_rs58757394  <- build_prs_variant_sf(df1, rs58757394)
 
 # =========================================================
-# Build final 4 figure panels
+# Build main figure panels
+# Main Figure 5:
+# - A: LPA
+# - B: LDLR
 # =========================================================
 p_A <- make_panel_plot(
-  sf = sf_prs_only,
-  plot_title = "<b>PRS only</b>",
-  y_max = 0.08,
-  show_carrier_ci = FALSE,
-  carrier_ci_alpha = 0.04,
-  legend_position = c(0.03, 0.97),
-  legend_justification = c(0, 1)
-)
-
-p_B <- make_panel_plot(
   sf = sf_rs3798220,
   plot_title = "<b><i>LPA</i> (rs3798220_C)</b>",
   y_max = 0.08,
@@ -596,7 +591,7 @@ p_B <- make_panel_plot(
   legend_justification = c(0, 1)
 )
 
-p_C <- make_panel_plot(
+p_B <- make_panel_plot(
   sf = sf_rs730882080,
   plot_title = "<b><i>LDLR</i> (rs730882080_T)</b>",
   y_max = 0.08,
@@ -606,7 +601,10 @@ p_C <- make_panel_plot(
   legend_justification = c(0, 1)
 )
 
-p_D <- make_panel_plot(
+# =========================================================
+# Build supplementary figure panel
+# =========================================================
+p_suppl_SLC4A11 <- make_panel_plot(
   sf = sf_rs58757394,
   plot_title = "<b><i>SLC4A11</i> (rs58757394_T)</b>",
   y_max = 0.08,
@@ -617,24 +615,25 @@ p_D <- make_panel_plot(
 )
 
 # =========================================================
-# Combine final 4-panel figure
+# Combine final main figure
 # =========================================================
-final_plot <- ((p_A | p_B) / (p_C | p_D)) +
+final_plot <- (p_A | p_B) +
   plot_annotation(tag_levels = "A") &
   theme(
     plot.tag = element_text(face = "bold", size = 11, family = "Arial")
   )
 
 final_plot
+p_suppl_SLC4A11
 
 # =========================================================
-# Save figure
+# Save main figure
 # =========================================================
 ggsave(
-  "/path/to/figures/CHD_PRS_four_panels.pdf",
+  "/path/to/figures/CHD_PRS_main_two_panels_LPA_LDLR.pdf",
   final_plot,
   width = mm_to_in(180),
-  height = mm_to_in(180),
+  height = mm_to_in(90),
   units = "in",
   device = cairo_pdf,
   bg = "white",
@@ -642,10 +641,35 @@ ggsave(
 )
 
 ggsave(
-  "/path/to/figures/CHD_PRS_four_panels.png",
+  "/path/to/figures/CHD_PRS_main_two_panels_LPA_LDLR.png",
   final_plot,
   width = mm_to_in(180),
-  height = mm_to_in(180),
+  height = mm_to_in(90),
+  units = "in",
+  dpi = 600,
+  bg = "white",
+  limitsize = FALSE
+)
+
+# =========================================================
+# Save supplementary figure: SLC4A11
+# =========================================================
+ggsave(
+  "/path/to/figures/CHD_PRS_supplementary_SLC4A11.pdf",
+  p_suppl_SLC4A11,
+  width = mm_to_in(88),
+  height = mm_to_in(88),
+  units = "in",
+  device = cairo_pdf,
+  bg = "white",
+  limitsize = FALSE
+)
+
+ggsave(
+  "/path/to/figures/CHD_PRS_supplementary_SLC4A11.png",
+  p_suppl_SLC4A11,
+  width = mm_to_in(88),
+  height = mm_to_in(88),
   units = "in",
   dpi = 600,
   bg = "white",
