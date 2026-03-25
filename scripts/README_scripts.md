@@ -188,7 +188,7 @@ The script:
 - fits Cox proportional hazards models using continuous standardized PRS
 - generates model-based cumulative hazard curves for representative PRS values (median within each quintile)
 - identifies the ages at which each PRS stratum reaches predefined cumulative risk thresholds
-- annotates curves with age labels at these threshold intersections
+
 
 **Used for**
 - Figure 3B
