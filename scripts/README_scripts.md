@@ -565,7 +565,7 @@ The script:
 
 ### `06d_chd_prs_rare_variant_survival_figure_and_tables.R`
 
-Generates the final CHD cumulative hazard figure combining PRS stratification and rare variant carrier status, and produces the corresponding supplementary table.
+Generates the final CHD cumulative hazard figures combining PRS stratification and rare variant carrier status, and produces the corresponding supplementary tables.
 
 The script:
 - fits Cox models for:
@@ -575,16 +575,20 @@ The script:
   - on all participants in the PRS-only model
   - only among non-carriers in variant-specific models
 - treats rare variant carriers as a separate group
-- generates the final multi-panel cumulative hazard figure
+- generates:
+  - the main two-panel cumulative hazard figure (LPA and LDLR)
+  - a supplementary cumulative hazard figure for SLC4A11
 - exports model-derived hazard ratio tables for the supplementary material
 
 **Used for**
-- Figure 5
+- Figure 5 (LPA and LDLR panels)
+- Supplementary Figure (SLC4A11)
 - Supplementary survival model table
 
 **Notes**
 - Variant-specific PRS strata are defined among non-carriers only
 - Carrier groups are shown separately
+- The SLC4A11 analysis is presented as supplementary due to lack of independent replication
 - Models are adjusted for age, sex, and PC1–PC5
 
 
