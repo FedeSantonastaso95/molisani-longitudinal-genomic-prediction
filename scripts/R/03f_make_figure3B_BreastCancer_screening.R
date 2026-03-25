@@ -9,7 +9,7 @@
 #      PRS values (median PRS_z within each quintile)
 #   4. identifies the ages at which each curve crosses two predefined
 #      cumulative hazard thresholds
-#   5. adds points and age labels at those intersections
+#   5. adds points at those intersections
 #
 # Notes:
 # - Age is used as the time scale.
@@ -42,7 +42,7 @@ outfile_png <- "path/to/output/Figure3B_BC_quintiles.png"
 df <- fread(
   infile,
   data.table = FALSE
-) 
+)
 
 
 ## ----------------------------
@@ -67,7 +67,6 @@ df2 <- df %>%
       breast_Bs_final == 2 &
         Mt_Diagnosis_New == 1 &
         Mt1_Icd9 == 174 ~ Age_Mt1_New,
-      
       TRUE ~ (
         as.numeric(
           as.Date(Dataexit_Bc_Fup2020, format = "%Y-%m-%d") -
@@ -355,7 +354,7 @@ if (nrow(df_plot) == 0) {
 
 
 ## ----------------------------
-## Labels and plotting data
+## Plotting data for intersections
 ## ----------------------------
 df_plot <- df_plot %>%
   mutate(
@@ -367,45 +366,10 @@ cross_df <- cross_df_all %>%
   mutate(
     strata = factor(strata, levels = quint_labels),
     strata_lab = factor(strata, levels = quint_labels, labels = quint_labels),
-    point_y = target,
-    age_label = paste0(round(age), " yr")
+    point_y = target
   )
 
 print(cross_df)
-
-
-## ----------------------------
-## Label position adjustments
-## ----------------------------
-#
-# These nudges are chosen to produce a layout similar to the attached figure.
-# They can be fine-tuned if the underlying curves change.
-label_offsets <- data.frame(
-  strata = rep(quint_labels, each = 2),
-  target = rep(targets, times = length(quint_labels)),
-  nudge_x = c(
-    2.2,  2.2,   # Q1
-    1.8,  1.6,   # Q2
-    0.4,  0.6,   # Q3
-    -1.2, -1.4,   # Q4
-    -2.0, -2.2    # Q5
-  ),
-  nudge_y = c(
-    -0.0012,  0.0004,   # Q1
-    -0.0009,  0.0007,   # Q2
-    -0.0012,  0.0007,   # Q3
-    -0.0008,  0.0007,   # Q4
-    -0.0009,  0.0008    # Q5
-  )
-)
-
-cross_df <- cross_df %>%
-  left_join(label_offsets, by = c("strata", "target")) %>%
-  mutate(
-    label_x = age + nudge_x,
-    label_y = point_y + nudge_y,
-    label_col = pal[as.character(strata)]
-  )
 
 
 ## ----------------------------
@@ -449,25 +413,6 @@ p <- ggplot(df_plot, aes(x = time, y = cumhaz)) +
     aes(x = age, y = point_y, color = strata_lab),
     size = 2.8,
     inherit.aes = FALSE,
-    show.legend = FALSE
-  ) +
-  
-  # Age labels at the curve-threshold intersections
-  geom_label(
-    data = cross_df,
-    aes(
-      x = label_x,
-      y = label_y,
-      label = age_label,
-      color = strata_lab
-    ),
-    inherit.aes = FALSE,
-    fill = alpha("white", 0.85),
-    label.size = 0.45,
-    label.r = unit(0.15, "lines"),
-    size = 5.2,
-    fontface = "plain",
-    family = "Arial",
     show.legend = FALSE
   ) +
   
