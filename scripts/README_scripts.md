@@ -103,7 +103,7 @@ Generates empirical survival curves for Supplementary Figure 2 across PRS quinti
 - renal cancer
 - pancreatic cancer
 
-Curves are estimated using empirical `survfit()` models and plotted as cumulative hazard.
+Curves are estimated using empirical `survfit()` models and plotted as cumulative incidence (1 − S(t)), expressed as percentages.
 
 The script:
 - builds endpoint-specific survival datasets including incident events only
@@ -117,6 +117,7 @@ The script:
 
 **Notes**
 - Baseline-prevalent cases are excluded from all analyses
+- For stroke, secondary events are not counted as incident events (handled upstream)
 - Models are adjusted for age, sex (when applicable), and genetic principal components (PC1–PC5)
 
 

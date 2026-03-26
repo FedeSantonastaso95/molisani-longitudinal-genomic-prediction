@@ -9,7 +9,7 @@
 #
 # This script:
 #   1. builds endpoint-specific incident-only survival datasets
-#   2. generates empirical cumulative hazard curves by PRS quintile
+#   2. generates empirical cumulative incidence curves by PRS quintile
 #      using survfit()
 #   3. fits Cox models to obtain:
 #        - HR per 1-SD increase in PRS
@@ -25,6 +25,10 @@
 #     * Age
 #     * PC1-PC5
 #     * Sex, only when appropriate
+#
+# Curves are plotted as cumulative incidence:
+#   1 - S(t)
+# by setting fun = "event" in ggsurvplot().
 ############################################################
 
 
@@ -263,7 +267,7 @@ make_curve_plot_empirical <- function(df,
                                       sex_filter = "all",
                                       xlim_years = c(0, 16),
                                       ylim_top = 0.015,
-                                      y_mode = c("cumhaz", "event"),
+                                      y_mode = c("event", "cumhaz"),
                                       y_break_by = NULL) {
   
   y_mode <- match.arg(y_mode)
@@ -395,7 +399,7 @@ make_curve_plot_empirical <- function(df,
     scale_y_continuous(
       limits = c(0, ylim_top),
       breaks = seq(0, ylim_top, by = y_break_by),
-      labels = function(x) ifelse(x == 0, "0", formatC(x, format = "f", digits = 3))
+      labels = function(x) paste0(sprintf("%.1f", x * 100), "%")
     ) +
     scale_x_continuous(breaks = seq(xlim_years[1], xlim_years[2], by = 4)) +
     guides(
@@ -419,7 +423,7 @@ make_curve_plot_empirical <- function(df,
   s16 <- summary(fit_emp, times = xlim_years[2], extend = TRUE)
   
   if (y_mode == "event") {
-    est16 <- setNames(s16$surv, nm = paste0("Q", 1:5))
+    est16 <- setNames(1 - s16$surv, nm = paste0("Q", 1:5))
   } else {
     est16 <- setNames(s16$cumhaz, nm = paste0("Q", 1:5))
   }
@@ -465,9 +469,9 @@ endpoints_4b <- endpoints %>%
 ## ----------------------------
 ## Run analysis and collect outputs
 ## ----------------------------
-plot_list_4b        <- vector("list", nrow(endpoints_4b))
-results_cont_list_b <- vector("list", nrow(endpoints_4b))
-results_cat_list_b  <- vector("list", nrow(endpoints_4b))
+plot_list_4b          <- vector("list", nrow(endpoints_4b))
+results_cont_list_b   <- vector("list", nrow(endpoints_4b))
+results_cat_list_b    <- vector("list", nrow(endpoints_4b))
 
 Y_MAX  <- 0.015
 Y_STEP <- 0.005
@@ -496,12 +500,12 @@ for (i in seq_len(nrow(endpoints_4b))) {
     title_text = ttl_full,
     outcome_label = acr,
     sex_filter = sex_f,
-    y_mode = "cumhaz",
+    y_mode = "event",
     ylim_top = Y_MAX,
     y_break_by = Y_STEP
   )
   
-  plot_list_4b[[i]]      <- out$plot
+  plot_list_4b[[i]]        <- out$plot
   results_cont_list_b[[i]] <- out$cont_stats
   results_cat_list_b[[i]]  <- out$cat_stats
 }
@@ -561,7 +565,7 @@ final_plot_b <- ggarrange(
 final_plot_b <- annotate_figure(
   final_plot_b,
   bottom = text_grob("Follow-up time (years)", size = 18, face = "bold", family = "Arial"),
-  left   = text_grob("Cumulative hazard", size = 18, face = "bold", family = "Arial", rot = 90)
+  left   = text_grob("Cumulative incidence (%)", size = 18, face = "bold", family = "Arial", rot = 90)
 )
 
 print(final_plot_b)
