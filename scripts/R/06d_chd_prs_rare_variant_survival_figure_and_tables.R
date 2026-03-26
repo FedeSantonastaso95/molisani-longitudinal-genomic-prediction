@@ -21,6 +21,10 @@
 # - LPA rs3798220           -> reference = Q1
 # - LDLR rs730882080        -> reference = Q1
 # - SLC4A11 rs58757394      -> reference = Q5
+#
+# NOTE:
+# - Curves are plotted as cumulative incidence:
+#     1 - S(t)
 # =========================================================
 
 # =========================================================
@@ -159,13 +163,13 @@ df1 <- df1 %>%
 # Helpers
 # =========================================================
 y_label_formatter <- function(x) {
-  ifelse(x == 0, "0", sprintf("%.2f", x))
+  ifelse(x == 0, "0", paste0(sprintf("%.0f", x * 100), "%"))
 }
 
 mm_to_in <- function(mm) mm / 25.4
 
 x_lab_common <- "Time (years)"
-y_lab_common <- "Cumulative CHD hazard"
+y_lab_common <- "Cumulative incidence of CHD (%)"
 
 q_labels <- paste0("Q", 1:5)
 legend_levels <- c(q_labels, "Carrier")
@@ -238,7 +242,7 @@ get_noncarrier_prs_quintile_medians <- function(df, prs_var = "PRED_eurW_CHD") {
 }
 
 # =========================================================
-# Extract predicted cumulative hazard + CI from coxph
+# Extract predicted cumulative incidence + CI from coxph
 # =========================================================
 get_predicted_curves <- function(fit, newdata, legend_var = "legend_group") {
   
@@ -267,9 +271,9 @@ get_predicted_curves <- function(fit, newdata, legend_var = "legend_group") {
     bind_rows() %>%
     mutate(
       legend_group = factor(legend_group, levels = legend_levels),
-      cumhaz = -log(pmax(surv, 1e-12)),
-      cumhaz_low = -log(pmax(upper_surv, 1e-12)),
-      cumhaz_high = -log(pmax(lower_surv, 1e-12))
+      cuminc = 1 - surv,
+      cuminc_low = pmax(0, 1 - upper_surv),
+      cuminc_high = pmin(1, 1 - lower_surv)
     )
   
   out0 <- newdata %>%
@@ -279,9 +283,9 @@ get_predicted_curves <- function(fit, newdata, legend_var = "legend_group") {
       lower_surv = 1,
       upper_surv = 1,
       legend_group = factor(.data[[legend_var]], levels = legend_levels),
-      cumhaz = 0,
-      cumhaz_low = 0,
-      cumhaz_high = 0
+      cuminc = 0,
+      cuminc_low = 0,
+      cuminc_high = 0
     )
   
   bind_rows(out0, out) %>%
@@ -445,8 +449,8 @@ make_panel_plot <- function(sf,
       data = sf_noncarrier,
       aes(
         x = time,
-        ymin = pmax(cumhaz_low, 0),
-        ymax = pmin(cumhaz_high, y_max),
+        ymin = pmax(cuminc_low, 0),
+        ymax = pmin(cuminc_high, y_max),
         fill = legend_group,
         group = legend_group
       ),
@@ -461,8 +465,8 @@ make_panel_plot <- function(sf,
         data = sf_carrier,
         aes(
           x = time,
-          ymin = pmax(cumhaz_low, 0),
-          ymax = pmin(cumhaz_high, y_max),
+          ymin = pmax(cuminc_low, 0),
+          ymax = pmin(cuminc_high, y_max),
           fill = legend_group,
           group = legend_group
         ),
@@ -477,7 +481,7 @@ make_panel_plot <- function(sf,
       data = sf_noncarrier,
       aes(
         x = time,
-        y = cumhaz,
+        y = cuminc,
         color = legend_group,
         linewidth = legend_group,
         linetype = legend_group,
@@ -488,7 +492,7 @@ make_panel_plot <- function(sf,
       data = sf_carrier,
       aes(
         x = time,
-        y = cumhaz,
+        y = cuminc,
         color = legend_group,
         linewidth = legend_group,
         linetype = legend_group,

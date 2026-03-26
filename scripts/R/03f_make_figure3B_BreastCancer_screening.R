@@ -463,7 +463,7 @@ p <- ggplot(df_plot, aes(x = time, y = cuminc)) +
   
   labs(
     x = "Age (years)",
-    y = "Cumulative incidence (%)"
+    y = "Breast cancer incidence (%)"
   ) +
   
   theme_bw() +
