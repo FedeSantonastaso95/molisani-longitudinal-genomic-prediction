@@ -2,15 +2,17 @@
 # 03a_make_figure3A_survival_curves.R
 #
 # Description:
-# This script generates the empirical survival curves used in Figure 3A
-# of the manuscript for four outcomes:
+# This script generates the empirical cumulative incidence curves used in
+# Figure 3A of the manuscript for four outcomes:
 #   - Coronary Heart Disease (CHD)
 #   - Breast cancer (BC)
 #   - Prostate cancer (PC)
 #   - Colorectal cancer (CRC)
 #
 # Curves are drawn by PRS quintiles using empirical survfit() estimates.
-# The plotted quantity is the cumulative hazard.
+# The plotted quantity is cumulative incidence, obtained as:
+#   1 - S(t)
+# by setting fun = "event" in ggsurvplot().
 #
 # In addition to the figure, the script exports summary tables containing:
 #   - categorical HRs by PRS quintile (Q2-Q5 vs Q1)
@@ -268,7 +270,7 @@ make_curve_plot_empirical <- function(df,
                                       sex_filter = "all",
                                       xlim_years = c(0, 16),
                                       ylim_top = 0.08,
-                                      y_mode = c("cumhaz", "event")) {
+                                      y_mode = c("event", "cumhaz")) {
   
   y_mode <- match.arg(y_mode)
   
@@ -395,7 +397,7 @@ make_curve_plot_empirical <- function(df,
     paste0("Q5 (HR = ", sprintf("%.2f", HR_categorical$HR[HR_categorical$quintile == "Q5"]), ")")
   )
   
-  # Build empirical cumulative hazard plot
+  # Build empirical cumulative incidence plot
   plt <- ggsurvplot(
     fit_emp,
     data = df_q,
@@ -426,7 +428,8 @@ make_curve_plot_empirical <- function(df,
   plt$plot <- plt$plot +
     scale_y_continuous(
       limits = c(0, ylim_top),
-      labels = function(x) ifelse(x == 0, "0", sprintf("%.2f", x))
+      breaks = seq(0, ylim_top, by = 0.02),
+      labels = function(x) paste0(sprintf("%.0f", x * 100), "%")
     ) +
     scale_x_continuous(breaks = seq(xlim_years[1], xlim_years[2], by = 4)) +
     guides(
@@ -451,7 +454,7 @@ make_curve_plot_empirical <- function(df,
   s16 <- summary(fit_emp, times = xlim_years[2], extend = TRUE)
   
   if (y_mode == "event") {
-    est16 <- setNames(s16$surv, nm = paste0("Q", 1:5))
+    est16 <- setNames(1 - s16$surv, nm = paste0("Q", 1:5))
   } else {
     est16 <- setNames(s16$cumhaz, nm = paste0("Q", 1:5))
   }
@@ -542,7 +545,7 @@ for (i in seq_len(nrow(endpoints_4))) {
     title_text = ttl,
     outcome_label = acr,
     sex_filter = sex_f,
-    y_mode = "cumhaz"
+    y_mode = "event"
   )
   
   plot_list_4[[i]] <- out$plot
@@ -601,7 +604,7 @@ final_plot <- annotate_figure(
   final_plot,
   top    = text_grob("A", size = 16, face = "bold", family = "Arial", x = 0.02, hjust = 0),
   bottom = text_grob("Follow-up time (years)", size = 18, face = "bold", family = "Arial"),
-  left   = text_grob("Cumulative disease rate", size = 18, face = "bold", family = "Arial", rot = 90)
+  left   = text_grob("Cumulative incidence (%)", size = 18, face = "bold", family = "Arial", rot = 90)
 )
 
 
