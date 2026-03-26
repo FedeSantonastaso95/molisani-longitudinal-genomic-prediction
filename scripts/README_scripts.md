@@ -187,8 +187,9 @@ Generates Figure 3B, showing cumulative breast cancer risk across PRS quintiles 
 The script:
 - defines a breast cancer time-to-event dataset in women only
 - fits Cox proportional hazards models using continuous standardized PRS
-- generates model-based cumulative hazard curves for representative PRS values (median within each quintile)
+- generates model-based cumulative incidence curves (1 − S(t)) at representative PRS values (median within each quintile)
 - identifies the ages at which each PRS stratum reaches predefined cumulative risk thresholds
+- overlays these thresholds and corresponding intersection points on the plot
 
 
 **Used for**
@@ -198,6 +199,7 @@ The script:
 - Age is used as the time scale
 - Analysis restricted to age ≤ 80 years
 - PRS quintiles are derived from the standardized PRS distribution
+
 
 
 ### `03g_supplementary_table_S7_breast_prs_start_age_comparison.R`

@@ -1,20 +1,23 @@
 ############################################################
 # Figure 3B
-# Breast cancer cumulative hazard by PRS quintiles
+# Breast cancer cumulative incidence by PRS quintiles
 #
 # This script:
 #   1. defines a breast cancer time-to-event dataset in women only
 #   2. fits a Cox model with continuous standardized PRS
-#   3. generates predicted cumulative hazard curves at representative
+#   3. generates predicted cumulative incidence curves at representative
 #      PRS values (median PRS_z within each quintile)
 #   4. identifies the ages at which each curve crosses two predefined
-#      cumulative hazard thresholds
+#      cumulative incidence thresholds
 #   5. adds points at those intersections
+#   6. prints the crossing ages in the console
 #
 # Notes:
 # - Age is used as the time scale.
 # - The analysis is restricted to age <= 80 years.
 # - PRS quintiles are defined from the standardized PRS distribution.
+# - Curves are plotted as cumulative incidence:
+#     1 - S(t)
 ############################################################
 
 
@@ -184,11 +187,7 @@ hline_cols <- c(
 )
 
 y_lab_fun <- function(x) {
-  ifelse(
-    abs(x) < 1e-12,
-    "0",
-    sub("\\.?0+$", "", sprintf("%.2f", x))
-  )
+  paste0(sprintf("%.0f", x * 100), "%")
 }
 
 
@@ -201,9 +200,6 @@ time_vec <- sf$time
 surv_mat <- sf$surv
 if (is.null(dim(surv_mat))) surv_mat <- matrix(surv_mat, ncol = 1)
 
-cumhaz_mat <- sf$cumhaz
-if (is.null(dim(cumhaz_mat))) cumhaz_mat <- matrix(cumhaz_mat, ncol = 1)
-
 lower_mat <- sf$lower
 if (!is.null(lower_mat) && is.null(dim(lower_mat))) {
   lower_mat <- matrix(lower_mat, ncol = 1)
@@ -212,11 +208,6 @@ if (!is.null(lower_mat) && is.null(dim(lower_mat))) {
 upper_mat <- sf$upper
 if (!is.null(upper_mat) && is.null(dim(upper_mat))) {
   upper_mat <- matrix(upper_mat, ncol = 1)
-}
-
-std_err_mat <- sf$std.err
-if (!is.null(std_err_mat) && is.null(dim(std_err_mat))) {
-  std_err_mat <- matrix(std_err_mat, ncol = 1)
 }
 
 n_curves <- ncol(surv_mat)
@@ -231,22 +222,17 @@ for (j in seq_len(n_curves)) {
   tmp <- data.frame(
     time   = time_vec,
     strata = curve_ids[j],
-    surv   = surv_mat[, j],
-    cumhaz = cumhaz_mat[, j]
+    surv   = surv_mat[, j]
   )
   
-  # Confidence intervals transformed from survival to cumulative hazard
+  tmp$cuminc <- 1 - tmp$surv
+  
+  # Confidence intervals transformed from survival to cumulative incidence
   if (!is.null(lower_mat) && !is.null(upper_mat)) {
     tmp$lower_surv <- pmin(pmax(lower_mat[, j], 1e-10), 1)
     tmp$upper_surv <- pmin(pmax(upper_mat[, j], 1e-10), 1)
-    tmp$lower <- pmax(0, -log(tmp$upper_surv))
-    tmp$upper <- pmax(0, -log(tmp$lower_surv))
-  } else if (!is.null(std_err_mat)) {
-    z <- qnorm(.975)
-    tmp$se_surv <- std_err_mat[, j]
-    tmp$se_ch <- ifelse(tmp$surv > 0, tmp$se_surv / tmp$surv, NA_real_)
-    tmp$lower <- pmax(0, tmp$cumhaz - z * tmp$se_ch)
-    tmp$upper <- tmp$cumhaz + z * tmp$se_ch
+    tmp$lower <- pmax(0, 1 - tmp$upper_surv)
+    tmp$upper <- pmin(1, 1 - tmp$lower_surv)
   } else {
     tmp$lower <- NA_real_
     tmp$upper <- NA_real_
@@ -266,16 +252,16 @@ df0 <- bind_rows(df_list) %>%
 ## ----------------------------
 #
 # For each quintile-specific predicted curve, find the first age at which
-# cumulative hazard reaches or exceeds the requested threshold.
+# cumulative incidence reaches or exceeds the requested threshold.
 get_cross_target <- function(q_label, target_value, data_curves) {
   d <- data_curves %>%
     filter(strata == q_label) %>%
     arrange(time)
   
   if (nrow(d) == 0) return(NA_real_)
-  if (max(d$cumhaz, na.rm = TRUE) < target_value) return(NA_real_)
+  if (max(d$cuminc, na.rm = TRUE) < target_value) return(NA_real_)
   
-  d$time[which(d$cumhaz >= target_value)[1]]
+  d$time[which(d$cuminc >= target_value)[1]]
 }
 
 cross_df_all <- expand.grid(
@@ -293,6 +279,40 @@ print(cross_df_all)
 
 
 ## ----------------------------
+## Print crossing ages in a clean table
+## ----------------------------
+#
+# This table reports, for each PRS quintile, the age at which the
+# predicted cumulative incidence curve first reaches each target.
+print_crossing_ages <- function(crossing_df) {
+  cross_wide <- crossing_df %>%
+    mutate(
+      target_label = case_when(
+        target == 0.010 ~ "age_at_1.0pct",
+        target == 0.013 ~ "age_at_1.3pct",
+        TRUE ~ paste0("age_at_", target)
+      )
+    ) %>%
+    select(strata, target_label, age) %>%
+    tidyr::pivot_wider(
+      names_from = target_label,
+      values_from = age
+    ) %>%
+    arrange(strata)
+  
+  cat("\n============================================================\n")
+  cat("Ages at which each PRS quintile reaches the target cumulative incidence\n")
+  cat("============================================================\n")
+  print(cross_wide)
+  cat("============================================================\n\n")
+  
+  invisible(cross_wide)
+}
+
+crossing_age_table <- print_crossing_ages(cross_df_all)
+
+
+## ----------------------------
 ## Dynamic x-axis upper limit
 ## ----------------------------
 cross_max <- suppressWarnings(max(cross_df_all$age, na.rm = TRUE))
@@ -305,17 +325,17 @@ x_max <- if (cross_max > x_max_base) cap_to_decade(cross_max) else x_max_base
 ## ----------------------------
 #
 # Curves are displayed from age 30 onward and re-centered so that
-# cumulative hazard starts at 0 at age 30.
+# cumulative incidence starts at 0 at age 30.
 df1 <- df0 %>%
   group_by(strata) %>%
   mutate(
-    ch_at_xmin = {
-      v <- cumhaz[time <= x_min]
+    ci_at_xmin = {
+      v <- cuminc[time <= x_min]
       if (length(v) == 0) 0 else max(v, na.rm = TRUE)
     },
-    cumhaz = cumhaz - ch_at_xmin,
-    lower  = pmax(0, lower - ch_at_xmin),
-    upper  = pmax(0, upper - ch_at_xmin)
+    cuminc = cuminc - ci_at_xmin,
+    lower  = pmax(0, lower - ci_at_xmin),
+    upper  = pmax(0, upper - ci_at_xmin)
   ) %>%
   ungroup()
 
@@ -331,18 +351,18 @@ df_plot <- df1 %>%
     add0 <- distinct(., strata) %>%
       mutate(
         time = x_min,
-        cumhaz = 0,
+        cuminc = 0,
         lower = 0,
         upper = 0,
         surv = NA_real_,
-        ch_at_xmin = NA_real_
+        ci_at_xmin = NA_real_
       )
     bind_rows(add0, .)
   } %>%
   filter(time >= x_min, time <= x_max) %>%
   arrange(strata, time) %>%
   mutate(
-    cumhaz = ifelse(time == x_min, 0, cumhaz),
+    cuminc = ifelse(time == x_min, 0, cuminc),
     lower  = ifelse(time == x_min, 0, lower),
     upper  = ifelse(time == x_min, 0, upper)
   ) %>%
@@ -384,7 +404,7 @@ hline_df <- data.frame(
 ## ----------------------------
 ## Plot
 ## ----------------------------
-p <- ggplot(df_plot, aes(x = time, y = cumhaz)) +
+p <- ggplot(df_plot, aes(x = time, y = cuminc)) +
   
   geom_ribbon(
     aes(ymin = lower, ymax = upper, fill = strata_lab),
@@ -443,7 +463,7 @@ p <- ggplot(df_plot, aes(x = time, y = cumhaz)) +
   
   labs(
     x = "Age (years)",
-    y = "Cumulative breast cancer rate"
+    y = "Cumulative incidence (%)"
   ) +
   
   theme_bw() +
