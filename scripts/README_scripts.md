@@ -79,7 +79,7 @@ Generates empirical survival curves for Figure 3A across PRS quintiles for:
 - prostate cancer (PC)
 - colorectal cancer (CRC)
 
-Curves are estimated using empirical `survfit()` models and plotted as cumulative hazard.
+Curves are estimated using empirical `survfit()` models and plotted as cumulative incidence (1 − S(t)), expressed as percentages.
 
 The script also:
 - estimates hazard ratios across PRS quintiles (Q2–Q5 vs Q1)
