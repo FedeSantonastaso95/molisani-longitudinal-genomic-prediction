@@ -10,6 +10,10 @@
 #      with external European reference estimates
 #   2. PRS quintile-based association plots used for Figure 2B
 #
+# Additional outputs:
+#   - A supplementary table containing OR, 95% CI, p-value, mean standardized
+#     PRS, and counts per quintile for the Figure 2B analyses
+#
 # Notes:
 # - This script assumes that the main PRS association results have already
 #   been generated.
@@ -25,7 +29,7 @@
 library(data.table)
 library(dplyr)
 library(ggplot2)
-library(grid)      # for unit()
+library(grid)
 library(survival)
 library(survminer)
 library(ggpubr)
@@ -36,10 +40,11 @@ library(cowplot)
 library(patchwork)
 library(ggrepel)
 library(ragg)
+library(tibble)
 
 
 # ============================ #
-# 1. Define input file paths   #
+# 1. Define input/output paths #
 # ============================ #
 
 # European reference effect estimates
@@ -51,7 +56,7 @@ results_file <- "path/to/final_results.txt"
 # Phenotype/covariate/PRS dataset used for quintile-based plots
 phenotype_file <- "path/to/phenotype_dataset.txt"
 
-# Output directory for figures
+# Output directory for figures and tables
 output_dir <- "path/to/output_directory"
 
 
@@ -59,16 +64,14 @@ output_dir <- "path/to/output_directory"
 # 2. Read input data           #
 # ============================ #
 eur <- fread(eur_file, data.table = FALSE)
-
 final_results <- fread(results_file, data.table = FALSE)
 
 
 # ============================ #
-# 3. Prepare labels for the    #
-#    forest plots              #
+# 3. Prepare labels for forest #
+#    plots                     #
 # ============================ #
 
-# Disease order used in the final figure
 y_levels_fig <- c(
   "Breast Cancer (BC)",
   "Prostate Cancer (PC)",
@@ -80,7 +83,6 @@ y_levels_fig <- c(
   "Pancreatic Cancer (PNC)"
 )
 
-# Harmonize endpoint labels so that disease names are consistent across plots
 final_results2 <- final_results %>%
   filter(endpoint != "I-Stroke") %>%
   mutate(
@@ -103,12 +105,6 @@ final_results2 <- final_results %>%
 # 4. Forest plot function      #
 # ============================ #
 
-# This function creates a forest plot comparing:
-# - the Moli-sani estimate
-# - the corresponding European reference estimate
-#
-# When add_orci_labels = TRUE, a right-side column is added showing the
-# OR (95% CI) values for each disease.
 make_forest_plot <- function(df_scenario,
                              eur_tbl,
                              right_margin = 10,
@@ -119,12 +115,10 @@ make_forest_plot <- function(df_scenario,
                              label_y_offset = 0.22,
                              text_col_mult = 1.28) {
   
-  # Join scenario-specific results with the European reference table
   df1 <- df_scenario %>%
     left_join(eur_tbl, by = c("outcome" = "trait")) %>%
     mutate(prs_trait1 = factor(prs_trait1, levels = y_levels_fig, ordered = TRUE))
   
-  # Create a long-format table with one row per source and disease
   df_plot <- bind_rows(
     df1 %>%
       transmute(
@@ -143,18 +137,10 @@ make_forest_plot <- function(df_scenario,
         CI_upper = CI_upper_eur
       )
   ) %>%
-    mutate(
-      source = factor(source, levels = c("European reference", "Moli-sani"))
-    ) %>%
-    filter(!is.na(prs_trait1))
+    mutate(source = factor(source, levels = c("European reference", "Moli-sani"))) %>%
+    filter(!is.na(prs_trait1)) %>%
+    mutate(y_num = as.numeric(prs_trait1))
   
-  # Numeric y positions are used to place the two rows for each disease
-  df_plot <- df_plot %>%
-    mutate(
-      y_num = as.numeric(prs_trait1)
-    )
-  
-  # Optional text labels for OR (95% CI)
   if (add_orci_labels) {
     df_plot <- df_plot %>%
       mutate(
@@ -167,7 +153,6 @@ make_forest_plot <- function(df_scenario,
       )
   }
   
-  # Define x-axis limits on the log scale
   min_CI <- min(df_plot$CI_lower, na.rm = TRUE)
   max_CI <- max(df_plot$CI_upper, na.rm = TRUE)
   
@@ -181,7 +166,6 @@ make_forest_plot <- function(df_scenario,
     x_max <- x_text * 1.08
   }
   
-  # X-axis breaks
   brks <- c(0.25, 0.5, 0.9, 1, 1.5, 2, 2.5)
   
   lab_fun <- function(x) {
@@ -192,11 +176,8 @@ make_forest_plot <- function(df_scenario,
     }
   }
   
-  # Build plot
   p <- ggplot(df_plot, aes(x = OR, y = y_num, colour = source, shape = source)) +
     geom_vline(xintercept = 1, linetype = "dashed", linewidth = 0.4) +
-    
-    # European reference estimate shown below the center line
     geom_errorbarh(
       data = df_plot %>% filter(source == "European reference"),
       aes(xmin = CI_lower, xmax = CI_upper),
@@ -210,8 +191,6 @@ make_forest_plot <- function(df_scenario,
       stroke = 0.3,
       position = position_nudge(y = +0.15)
     ) +
-    
-    # Moli-sani estimate shown above the center line
     geom_errorbarh(
       data = df_plot %>% filter(source == "Moli-sani"),
       aes(xmin = CI_lower, xmax = CI_upper),
@@ -225,7 +204,6 @@ make_forest_plot <- function(df_scenario,
       stroke = 0.3,
       position = position_nudge(y = -0.15)
     ) +
-    
     scale_color_manual(values = c(
       "European reference" = "#999999",
       "Moli-sani" = "black"
@@ -234,7 +212,6 @@ make_forest_plot <- function(df_scenario,
       "European reference" = 15,
       "Moli-sani" = 15
     )) +
-    
     scale_x_log10(
       breaks = brks,
       labels = lab_fun,
@@ -264,7 +241,6 @@ make_forest_plot <- function(df_scenario,
       plot.margin = margin(5, right_margin, 5, left_margin)
     )
   
-  # Add OR (95% CI) labels if requested
   if (add_orci_labels) {
     p <- p +
       geom_text(
@@ -289,7 +265,7 @@ make_forest_plot <- function(df_scenario,
       )
   }
   
-  return(p)
+  p
 }
 
 
@@ -297,7 +273,6 @@ make_forest_plot <- function(df_scenario,
 # 5. Generate forest plots     #
 # ============================ #
 
-# Incident-only forest plot with aligned OR (95% CI) labels
 p_inc <- make_forest_plot(
   final_results2 %>% filter(scenario == "incident"),
   eur,
@@ -307,7 +282,6 @@ p_inc <- make_forest_plot(
   label_size = 3.0
 )
 
-# All-event forest plot without the right-side OR column
 p_all <- make_forest_plot(
   final_results2 %>% filter(scenario == "all_event"),
   eur,
@@ -323,7 +297,6 @@ p_all <- make_forest_plot(
 p_inc
 p_all
 
-# Build a simple summary table for the all-event results
 all_or_table <- final_results2 %>%
   filter(scenario == "all_event") %>%
   left_join(eur, by = c("outcome" = "trait")) %>%
@@ -358,14 +331,10 @@ ggsave(
 
 
 # ============================ #
-# 8. Figure 2B: read phenotype #
-#    dataset                   #
+# 8. Read phenotype dataset    #
 # ============================ #
 
-df <- fread(
-  phenotype_file,
-  data.table = FALSE
-) %>%
+df <- fread(phenotype_file, data.table = FALSE) %>%
   mutate(
     Dataexit_Bc_Fup2020 = as.character(Dataexit_Bc_Fup2020),
     Dataexit_Pc_Fup2020 = as.character(Dataexit_Pc_Fup2020),
@@ -375,9 +344,6 @@ df <- fread(
     Dataexit_Pnc_Fup2020 = as.character(Dataexit_Pnc_Fup2020)
   ) %>%
   mutate(
-    # Combine cancer follow-up dates into a single composite field.
-    # This is only used because the number of events for each single cancer
-    # type is small in the quintile-based display.
     Date_cancer_FUP2020 = case_when(
       Dataexit_Bc_Fup2020 != "2020-12-31" ~ Dataexit_Bc_Fup2020,
       Dataexit_Pc_Fup2020 != "2020-12-31" ~ Dataexit_Pc_Fup2020,
@@ -390,11 +356,8 @@ df <- fread(
     Fnf_cancer_FUP2020 = ifelse(
       Fnf_Bc_Fup2020 == 1 | Fnf_Pc_Fup2020 == 1 | Fnf_Crc_Fup2020 == 1 |
         Fnf_Lc_Fup2020 == 1 | Fnf_Rnc_Fup2020 == 1 | Fnf_Pnc_Fup2020 == 1,
-      1,
-      0
-    )
-  ) %>%
-  mutate(
+      1, 0
+    ),
     Fnf_cancer_FUP2020 = ifelse(is.na(Fnf_cancer_FUP2020), 0, Fnf_cancer_FUP2020)
   )
 
@@ -406,12 +369,6 @@ df <- fread(
 
 df1 <- df %>%
   mutate(
-    # Baseline coding for CHD and stroke:
-    #   0 = No
-    #   1 = Yes, documented
-    #   2 = Yes, not documented
-    #
-    # In the analysis, both 1 and 2 are treated as prevalent disease.
     Chd_Bs_New_final = case_when(
       Chd_Bs_New == 0 ~ 0,
       Chd_Bs_New %in% c(1, 2) ~ 1,
@@ -422,8 +379,6 @@ df1 <- df %>%
       Cerebro_Bs_New %in% c(1, 2) ~ 1,
       TRUE ~ NA_real_
     ),
-    
-    # Baseline cancer definitions from ICD-9 diagnosis fields
     breast_Bs_final = ifelse(
       Mt_Diagnosis_New == 1 &
         (Mt1_Icd9 == 174 | Mt2_Icd9_New == 174 | Mt3_Icd9_New == 174),
@@ -456,8 +411,6 @@ df1 <- df %>%
         (Mt1_Icd9 == 157 | Mt2_Icd9_New == 157 | Mt3_Icd9_New == 157),
       1, 0
     ),
-    
-    # Standardized PRSs
     PRED_eurW_CHD_scale = as.numeric(scale(PRED_eurW_CHD)),
     PRED_eurW_stroke_scale = as.numeric(scale(PRED_eurW_stroke)),
     PRED_eurW_breast_scale = as.numeric(scale(PRED_eurW_breast)),
@@ -473,8 +426,6 @@ df1 <- df %>%
 # 10. Remove secondary events  #
 # ============================ #
 
-# Participants who are already prevalent at baseline and also have a
-# follow-up CHD or stroke event are not counted as incident cases.
 df2 <- df1 %>%
   mutate(
     Chd0_Fnof_Fup2020 = if_else(
@@ -491,22 +442,11 @@ df2 <- df1 %>%
 
 
 # ============================ #
-# 11. Map each endpoint to its #
-#     baseline and follow-up   #
-#     variables                #
+# 11. Endpoint map             #
 # ============================ #
 
 df_legend <- data.frame(
-  prs_trait = c(
-    "CHD",
-    "stroke",
-    "breast",
-    "prostate",
-    "colorectal",
-    "lung",
-    "renal",
-    "pancreatic"
-  ),
+  prs_trait = c("CHD", "stroke", "breast", "prostate", "colorectal", "lung", "renal", "pancreatic"),
   baseline = c(
     "Chd_Bs_New_final",
     "Cerebro_Bs_New_final",
@@ -529,11 +469,7 @@ df_legend <- data.frame(
   )
 )
 
-list_counts <- list()
-
-# Create combined prevalent-or-incident event indicators
 for (j in 1:nrow(df_legend)) {
-  
   prs_trait <- df_legend$prs_trait[j]
   follow_up_col <- df_legend$follow_up[j]
   baseline_col <- df_legend$baseline[j]
@@ -542,21 +478,21 @@ for (j in 1:nrow(df_legend)) {
   df2 <- df2 %>%
     mutate(
       !!event_incident_prevalent_col := if_else(
-        (get(follow_up_col) == 1) | (get(baseline_col) == 1),
-        1,
-        0
+        (.data[[follow_up_col]] == 1) | (.data[[baseline_col]] == 1),
+        1, 0
       )
     )
 }
 
 
 # ============================ #
-# 12. Define quintile plot     #
-#     settings                 #
+# 12. Quintile plot settings   #
 # ============================ #
 
 plot_list <- list()
-legend_plot <- NULL
+list_OR <- list()
+list_counts <- list()
+supplementary_table_list <- list()
 
 data <- data.frame(
   column_name = c("Bc", "Pc", "Crc", "Chd0", "Stroke1", "Lc", "Rnc", "Pnc"),
@@ -585,37 +521,33 @@ data <- data.frame(
   )
 )
 
-list_OR <- list()
+
+# ============================ #
+# 13. Helper for p-values      #
+# ============================ #
+
+format_pvalue <- function(p) {
+  ifelse(
+    p < 1e-4,
+    formatC(p, format = "e", digits = 2),
+    formatC(p, format = "f", digits = 4)
+  )
+}
 
 
 # ============================ #
-# 13. Build PRS quintile plots #
+# 14. Build Figure 2B plots    #
+#     + supplementary table    #
 # ============================ #
 
 for (i in 1:nrow(data)) {
   
   column_name <- data$column_name[i]
   disease_associated <- data$disease_associated[i]
-  sex_stratified <- data$sex_stratified[i]
   outcome <- data$outcome[i]
   title <- data$title[i]
   event_incident_prevalent_col <- data$event_incident_prevalent_col[i]
   
-  # Identify columns associated with the selected endpoint
-  columns_disease <- grep(column_name, colnames(df), value = TRUE)
-  
-  # Keep only the event-related columns if multiple matches are found
-  column_dataexit <- columns_disease[grepl("Dat", columns_disease)]
-  column_fnf <- columns_disease[grepl("Fn", columns_disease)]
-  
-  if (length(column_fnf) > 1) {
-    column_fnf <- column_fnf[!grepl("Dat", column_fnf)]
-  }
-  if (length(column_fnf) > 1) {
-    column_fnf <- column_fnf[!grepl("Annipers", column_fnf)]
-  }
-  
-  # Restrict breast cancer to women and prostate cancer to men
   df3 <- df2 %>%
     filter(
       if (outcome == "breast") {
@@ -627,34 +559,32 @@ for (i in 1:nrow(data)) {
       }
     )
   
-  # Define PRS variable names
   new_column_name <- paste0("PRED_eurW_", outcome)
   new_category_column_name <- paste0(new_column_name, "_category")
+  new_scaled_column_name <- paste0(new_column_name, "_scaled")
   
-  # Standardize the PRS again within the plotting dataset
   df4 <- df3 %>%
     mutate(
-      !!paste0(new_column_name, "_scaled") := scale(!!sym(new_column_name))
+      !!new_scaled_column_name := as.numeric(scale(.data[[new_column_name]]))
     )
   
-  # Define quintiles from the raw PRS distribution
   quantiles <- quantile(
-    df4[[paste0("PRED_eurW_", outcome)]],
+    df4[[new_column_name]],
     probs = c(0.2, 0.4, 0.6, 0.8),
     na.rm = TRUE
   )
   
   breaks <- c(
-    min(df4[[paste0("PRED_eurW_", outcome)]], na.rm = TRUE),
+    min(df4[[new_column_name]], na.rm = TRUE),
     quantiles,
-    max(df4[[paste0("PRED_eurW_", outcome)]], na.rm = TRUE)
+    max(df4[[new_column_name]], na.rm = TRUE)
   )
   
   df5 <- df4 %>%
     mutate(
       !!new_category_column_name := cut(
-        !!sym(new_column_name),
-        breaks,
+        .data[[new_column_name]],
+        breaks = breaks,
         labels = FALSE,
         include.lowest = TRUE
       )
@@ -665,14 +595,8 @@ for (i in 1:nrow(data)) {
     levels = c(1, 2, 3, 4, 5)
   )
   
-  # No additional filtering is currently applied here
-  df6 <- if (disease_associated == "CHD_disease_onlyPrimary") {
-    df5 %>% filter(!Chd_Bs_New_final == 1)
-  } else {
-    df5
-  }
+  df6 <- df5
   
-  # Logistic regression model
   if (outcome %in% c("breast", "prostate")) {
     formula_str <- paste(
       event_incident_prevalent_col,
@@ -700,7 +624,7 @@ for (i in 1:nrow(data)) {
     rename(
       beta = Estimate,
       SE = "Std. Error",
-      pvalue = "Pr(>|z|)",
+      pvalue_raw = "Pr(>|z|)",
       z = "z value"
     ) %>%
     mutate(
@@ -708,41 +632,41 @@ for (i in 1:nrow(data)) {
       CI_upper = exp(beta + 1.96 * SE)
     ) %>%
     select(-z) %>%
-    mutate(across(-c(variable, pvalue), ~ round(., 2))) %>%
-    mutate(pvalue = format(pvalue, digits = 2, scientific = TRUE)) %>%
     mutate(prs_trait = outcome) %>%
     mutate(variable = gsub(paste0("factor\\(", new_category_column_name, "\\)"), "", variable)) %>%
-    mutate(quintile = paste0("Q", variable))
-  
-  # Reference category: first quintile
-  ref_row <- data.frame(
-    variable = 1,
-    beta = NA,
-    SE = NA,
-    pvalue = NA,
-    OR = 1,
-    CI_lower = NA,
-    CI_upper = NA,
-    prs_trait = "breast"
-  ) %>%
-    mutate(quintile = paste0("Q", variable))
-  
-  coef_logr2 <- rbind(ref_row, coef_logr1)
-  
-  column_scaled <- paste0(new_column_name, "_scaled")
-  category_column <- new_category_column_name
-  
-  # Mean standardized PRS within each quintile
-  result <- df6 %>%
-    filter(!is.na(!!sym(category_column))) %>%
-    group_by(!!sym(category_column)) %>%
-    summarise(
-      mean_scaled = round(mean(!!sym(column_scaled), na.rm = TRUE), 2),
-      .groups = "drop"
+    mutate(quintile = paste0("Q", variable)) %>%
+    mutate(
+      pvalue = format_pvalue(pvalue_raw),
+      `OR (95% CI)` = sprintf("%.2f (%.2f–%.2f)", OR, CI_lower, CI_upper)
     )
   
+  ref_row <- tibble(
+    variable = "1",
+    beta = NA_real_,
+    SE = NA_real_,
+    pvalue_raw = NA_real_,
+    OR = 1,
+    CI_lower = NA_real_,
+    CI_upper = NA_real_,
+    prs_trait = outcome,
+    quintile = "Q1",
+    pvalue = NA_character_,
+    `OR (95% CI)` = "1.00 [Reference]"
+  )
+  
+  coef_logr2 <- bind_rows(ref_row, coef_logr1)
+  
+  result_mean <- df6 %>%
+    filter(!is.na(.data[[new_category_column_name]])) %>%
+    group_by(.data[[new_category_column_name]]) %>%
+    summarise(
+      mean_scaled = round(mean(.data[[new_scaled_column_name]], na.rm = TRUE), 2),
+      .groups = "drop"
+    ) %>%
+    rename(variable = !!sym(new_category_column_name))
+  
   coef_logr3 <- coef_logr2 %>%
-    full_join(result, by = c("variable" = category_column)) %>%
+    full_join(result_mean, by = "variable") %>%
     mutate(
       label_position = case_when(
         column_name == "Stroke1" & quintile == "Q1" ~ OR + 0.7,
@@ -751,30 +675,31 @@ for (i in 1:nrow(data)) {
       )
     )
   
-  # Count cases within each quintile
   result_df <- df6 %>%
-    group_by(!!sym(new_category_column_name)) %>%
-    dplyr::summarize(
+    filter(!is.na(.data[[new_category_column_name]])) %>%
+    group_by(.data[[new_category_column_name]]) %>%
+    summarise(
       count_total = n(),
-      count_1 = sum(!!sym(event_incident_prevalent_col) == 1, na.rm = TRUE),
+      count_1 = sum(.data[[event_incident_prevalent_col]] == 1, na.rm = TRUE),
+      count_0 = sum(.data[[event_incident_prevalent_col]] == 0, na.rm = TRUE),
       .groups = "drop"
     )
   
   list_counts[[outcome]] <- result_df
   
   result_df1 <- result_df %>%
-    filter(!is.na(.data[[new_category_column_name]])) %>%
-    rename(variable = any_of(new_category_column_name))
-  
-  coef_logr3 <- coef_logr3 %>%
-    full_join(result_df1, by = "variable")
+    rename(variable = !!sym(new_category_column_name))
   
   coef_logr4 <- coef_logr3 %>%
-    mutate(quintile = ifelse(quintile == "Q1", paste0(quintile, " [reference]"), quintile)) %>%
-    mutate(outcome = disease_associated) %>%
+    full_join(result_df1, by = "variable") %>%
+    mutate(
+      quintile = ifelse(quintile == "Q1", "Q1 [reference]", quintile),
+      outcome = disease_associated
+    ) %>%
     select(-prs_trait)
   
-  plot <- ggplot(
+  # Plot: point size now depends on count_1
+  plot_i <- ggplot(
     coef_logr4,
     aes(
       x = as.numeric(factor(quintile, levels = c("Q1 [reference]", "Q2", "Q3", "Q4", "Q5"))),
@@ -789,9 +714,12 @@ for (i in 1:nrow(data)) {
       linetype = "dashed"
     ) +
     geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), width = 0.08) +
-    geom_point(shape = 22, col = "black", fill = "black", aes(size = OR)) +
-    
-    # Add case counts above each quintile
+    geom_point(
+      shape = 22,
+      col = "black",
+      fill = "black",
+      aes(size = count_1)
+    ) +
     geom_text(
       data = coef_logr4 %>% filter(quintile != "Q1 [reference]"),
       aes(label = count_1, y = label_position),
@@ -809,15 +737,15 @@ for (i in 1:nrow(data)) {
       size = 3.2,
       family = "Arial"
     ) +
-    
     scale_x_continuous(
       breaks = 1:5,
       labels = c("Q1", "Q2", "Q3", "Q4", "Q5"),
       expand = expansion(mult = c(0.05, 0.05))
     ) +
+    scale_size_continuous(range = c(2.5, 6)) +
     coord_cartesian(clip = "off") +
     scale_y_continuous(limits = c(0, 16)) +
-    labs(title = data$title[i], x = NULL, y = NULL) +
+    labs(title = title, x = NULL, y = NULL) +
     theme_minimal() +
     theme(
       panel.grid = element_blank(),
@@ -839,13 +767,30 @@ for (i in 1:nrow(data)) {
       plot.background = element_rect(fill = "transparent", color = NA)
     )
   
-  plot_list[[i]] <- plot
+  plot_list[[i]] <- plot_i
   list_OR[[i]] <- coef_logr4
+  
+  supplementary_table_list[[i]] <- coef_logr4 %>%
+    transmute(
+      title = title,
+      outcome = outcome,
+      quintile = quintile,
+      OR = OR,
+      CI_lower = CI_lower,
+      CI_upper = CI_upper,
+      OR_95CI = `OR (95% CI)`,
+      pvalue = pvalue,
+      pvalue_raw = pvalue_raw,
+      mean_scaled = mean_scaled,
+      n_total_quintile = count_total,
+      case_count = count_1,
+      noncase_count = count_0
+    )
 }
 
 
 # ============================ #
-# 14. Assemble Figure 2B       #
+# 15. Assemble Figure 2B       #
 # ============================ #
 
 aligned_plots <- cowplot::align_plots(plotlist = plot_list, align = "hv")
@@ -866,10 +811,22 @@ final_plot
 
 
 # ============================ #
-# 15. Export final Figure 2    #
+# 16. Save supplementary table #
 # ============================ #
 
-# Nature-style figure size (two-column width)
+supplementary_table_figure2B <- bind_rows(supplementary_table_list)
+
+write.csv(
+  supplementary_table_figure2B,
+  file = file.path(output_dir, "Supplementary_Table_Figure2B_quintile_ORs.csv"),
+  row.names = FALSE
+)
+
+
+# ============================ #
+# 17. Export final Figure 2    #
+# ============================ #
+
 mm_to_in <- function(mm) mm / 25.4
 
 width_mm <- 180
@@ -884,7 +841,6 @@ tag_theme <- theme(
   plot.tag.position = c(0, 1)
 )
 
-# Panel A: all-event forest plot
 p_A <- p_all +
   labs(tag = "A") +
   tag_theme +
@@ -893,7 +849,6 @@ p_A <- p_all +
     plot.margin = margin(5, 5, 5, 5)
   )
 
-# Panel B: quintile-based plots
 p_B <- final_plot +
   labs(tag = "B") +
   tag_theme +
@@ -912,7 +867,6 @@ p_B <- final_plot +
     plot.margin = margin(5, 5, 12, 5)
   )
 
-# Combine panels into the final manuscript figure
 fig <- (
   (plot_spacer() + p_A + plot_spacer()) +
     plot_layout(widths = c(0.9, 7.2, 0.9))
@@ -924,11 +878,9 @@ fig <- (
     text = element_text(family = base_family)
   )
 
-# Output file names
 out_pdf <- file.path(output_dir, "fig2_NM_180mm.pdf")
 out_png <- file.path(output_dir, "fig2_NM_180mm_600dpi.png")
 
-# Export vector PDF
 ggsave(
   filename = out_pdf,
   plot = fig,
@@ -940,7 +892,6 @@ ggsave(
   limitsize = FALSE
 )
 
-# Export high-resolution PNG
 ggsave(
   filename = out_png,
   plot = fig,
@@ -954,3 +905,5 @@ ggsave(
 )
 
 message("Saved:\n  PDF: ", out_pdf, "\n  PNG: ", out_png)
+message("Saved supplementary table:\n  CSV: ",
+        file.path(output_dir, "Supplementary_Table_Figure2B_quintile_ORs.csv"))
